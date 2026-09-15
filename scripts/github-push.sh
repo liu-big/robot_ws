@@ -9,7 +9,7 @@ REMOTE="git@github.com:${GITHUB_USER}/${REPO_NAME}.git"
 
 echo "=== GitHub 推送: ${GITHUB_USER}/${REPO_NAME} ==="
 
-if ! ssh -o BatchMode=yes -T git@github.com 2>&1 | grep -qi 'successfully authenticated'; then
+if ! ssh -o BatchMode=yes -T git@github.com 2>&1 | grep -qiE 'successfully authenticated|Hi '; then
   echo
   echo "[!] SSH 尚未授权。请把下面公钥添加到 GitHub："
   echo "    https://github.com/settings/keys  →  New SSH key"
@@ -33,13 +33,13 @@ if ! git rev-parse HEAD &>/dev/null; then
   git commit -m "Initial commit: robot_ws quadruped control stack"
 fi
 
-# 远程仓库不存在时尝试创建（需 gh 已登录）
-if command -v gh &>/dev/null && gh auth status &>/dev/null; then
-  if ! gh repo view "${GITHUB_USER}/${REPO_NAME}" &>/dev/null; then
-    echo "创建远程仓库 ${GITHUB_USER}/${REPO_NAME} ..."
-    gh repo create "${REPO_NAME}" --private --source=. --remote=origin --push
-    exit 0
-  fi
+if ! curl -fsS "https://api.github.com/repos/${GITHUB_USER}/${REPO_NAME}" &>/dev/null; then
+  echo
+  echo "[!] 远程仓库尚未创建。请先在浏览器打开（登录 ${GITHUB_USER}）："
+  echo "    https://github.com/new?name=${REPO_NAME}&description=Quadruped+robot+ROS2+workspace&private=true"
+  echo
+  echo "    不要勾选 README / .gitignore，创建空仓库后重新运行: $0"
+  exit 1
 fi
 
 echo "推送到 origin main ..."
