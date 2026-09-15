@@ -1,0 +1,28 @@
+# c620_quad_ros2 — can2 单帧 0x200，ID1+ID2 在线
+# 话题 data: [leg1, leg2, leg3, leg4] → [v, v, 0, 0]
+c620_quad_node:
+  ros__parameters:
+    can_interface: can2
+    active_wheels: [1, 2]
+    wheel_motor_ids: [1, 2, 0, 0]
+    control_hz: 500
+    can_tx_hz: 250
+    max_current_a: 2.5
+    max_vel_rad_s: 1.0
+    vel_friction_coulomb_a: 0.7
+    vel_friction_a: 0.2
+    vel_friction_min_rpm: 30.0      # 低速不加摩擦前馈，避免来回抖
+    startup_current_a: 0.0
+    cmd_timeout_ms: 800
+    sync_wheels: true               # 共享速度环 + 差速微调
+    sync_gain_a_per_rpm: 0.010
+    sync_corr_limit_a: 0.8
+    sync_vel_band_rpm: 18.0
+    stop_brake_a: 0.3
+    stop_brake_min_rpm: 35.0
+    rpm_ramp_rpm_s: 250.0           # 缓加速，更匀速
+    vel_deadband_rad_s: 0.02
+    vel_kp: 0.022
+    vel_ki: 0.004
+    # 前进时两轮 velocity 必须同号；异号则把对应 leg 的 sign 改成相同
+    wheel_sign: [-1.0, -1.0, 1.0, 1.0]

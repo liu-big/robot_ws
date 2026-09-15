@@ -1,0 +1,12 @@
+# quad_teleop_ros2 — 遥控协调（cmd_vel + 姿态）
+quad_teleop_node:
+  ros__parameters:
+    wheel_base_x: 0.30
+    wheel_base_y: 0.20
+    max_vx: 0.5
+    max_vy: 0.5
+    max_omega: 1.0
+    max_wheel_rad_s: 1.0
+    cmd_timeout_ms: 300
+    publish_hz: 50
+    active_wheels: [1, 2]

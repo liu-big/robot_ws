@@ -1,0 +1,20 @@
+# leg1_dual_ros2 参数（台架标定值，可随机械结构调整）
+leg1_dual_node:
+  ros__parameters:
+    can_interface: can0
+    lift_motor_id: 1
+    crouch_motor_id: 5
+    motion_kp: 35.0
+    motion_kd: 2.0
+    max_vel_rad_s: 0.15
+    max_accel_rad_s2: 0.5
+    max_command_step_rad: 0.25
+    disable_on_exit: false
+
+    # 预设姿态 (rad) — 台架 2026-09-11 标定，发 /leg1/goto/* 触发
+    pose_neutral_lift_rad: 6.05
+    pose_neutral_crouch_rad: 2.45
+    pose_stand_lift_rad: 6.13
+    pose_stand_crouch_rad: 2.65
+    pose_crouch_lift_rad: 5.97
+    pose_crouch_crouch_rad: 2.78

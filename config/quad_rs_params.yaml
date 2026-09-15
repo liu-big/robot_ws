@@ -1,0 +1,30 @@
+# quad_rs_ros2 — 四足 8×RS03（抬升 can0，拉杆 can1）
+# 台架仅 leg1: active_legs: [1]
+quad_rs_node:
+  ros__parameters:
+    lift_can_interface: can0
+    crouch_can_interface: can1
+    active_legs: [1]
+    loop_ms: 10
+    motion_kp: 35.0
+    motion_kd: 2.0
+    max_vel_rad_s: 0.5
+    max_accel_rad_s2: 1.0
+    max_command_step_rad: 0.25
+    disable_on_exit: false
+
+    leg1_lift_motor_id: 1
+    leg1_crouch_motor_id: 5
+    leg2_lift_motor_id: 2
+    leg2_crouch_motor_id: 6
+    leg3_lift_motor_id: 3
+    leg3_crouch_motor_id: 7
+    leg4_lift_motor_id: 4
+    leg4_crouch_motor_id: 8
+
+    pose_neutral_lift: [6.05, 6.05, 6.05, 6.05]
+    pose_neutral_crouch: [2.45, 2.45, 2.45, 2.45]
+    pose_stand_lift: [6.13, 6.13, 6.13, 6.13]
+    pose_stand_crouch: [2.65, 2.65, 2.65, 2.65]
+    pose_crouch_lift: [5.97, 5.97, 5.97, 5.97]
+    pose_crouch_crouch: [2.78, 2.78, 2.78, 2.78]

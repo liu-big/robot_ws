@@ -1,0 +1,104 @@
+# SocketCAN — 灵足 USB_CANHUB + 实际接线
+#
+# 整机目标（见 config/quadruped.yaml）:
+#   can0 → 灵足 RS03 ×8，ID 1~8（抬升 1~4 内，拉杆 5~8 外）
+#   can1 → 大疆 C620 ×4，ID 1~4（四轮麦轮）
+#
+# 当前台架: can0 仅 leg1（ID 1+5），can1 仅 leg1 麦轮
+#
+# 手册:
+#   USB_CANHUB: 3668968132USB_CANHUB使用说明V1.0(1).pdf
+#   RS03:       product_manual_robStride03-9c54db7a.pdf
+#   C620:       RoboMaster C620无刷电机调速器使用说明（中英日）V1.01.pdf
+
+device:
+  name: USB_CANHUB
+  vendor: 灵足时代 RobStride
+  driver: gs_usb
+  channels: 5
+  usb: Type-C USB2.0
+  termination_120ohm: "HUB 拨码 ON=120Ω; C620 自身也有终端电阻开关"
+
+defaults:
+  bitrate: 1000000
+  restart_ms: 100
+  txqueuelen: 1000
+
+buses:
+  can0:
+    interface: can0
+    purpose: robstride_rs03
+    vendor: 灵足
+    frame_type: extended
+    motors: 8
+    motor_ids: [1, 2, 3, 4, 5, 6, 7, 8]
+    role: all_legs_lift_and_crouch
+    bench_connected: [1, 5]
+  can1:
+    interface: can1
+    purpose: robstride_crouch
+    vendor: 灵足
+    frame_type: extended
+    motors: 4
+    motor_ids: [5, 6, 7, 8]
+    role: four_legs_crouch
+  can2:
+    interface: can2
+    purpose: spare
+  can3:
+    interface: can3
+    purpose: dji_c620_m3508
+    vendor: 大疆 DJI
+    frame_type: standard
+    motors: 4
+    motor_ids: [1, 2, 3, 4]
+    role: four_mecanum_wheels
+    bench_connected: [1, 2]
+  can4:
+    interface: can4
+    purpose: spare
+
+bringup_order:
+  - can0
+  - can1
+  - can3
+
+usb_topology:
+  bus: "Bus 02 Port 5 (USB2.0 12Mbps)"
+  mapping:
+    can0: "2-5.1:1.0"   # 灵足 RS03
+    can1: "2-5.2:1.0"   # 灵足 拉杆 5~8
+    can2: "2-5.3:1.0"
+    can3: "2-5.5:1.0"   # 大疆 C620
+    can4: "2-5.6:1.0"
+
+robstride:
+  interface: can0
+  frame_type: extended
+  host_id: 0xFF
+  manual: "product_manual_robStride03-9c54db7a.pdf"
+  motors:
+    - {id: 1, leg: leg1, role: lift}
+    - {id: 2, leg: leg2, role: lift}
+    - {id: 3, leg: leg3, role: lift}
+    - {id: 4, leg: leg4, role: lift}
+    - {id: 5, leg: leg1, role: crouch}
+    - {id: 6, leg: leg2, role: crouch}
+    - {id: 7, leg: leg3, role: crouch}
+    - {id: 8, leg: leg4, role: crouch}
+
+dji_c620:
+  interface: can3
+  frame_type: standard
+  bitrate: 1000000
+  manual: "RoboMaster C620无刷电机调速器使用说明（中英日）V1.01.pdf"
+  # 控制帧: 0x200 (ID1-4) / 0x1FF (ID5-8), 每电机 int16 电流 -16384~16384 → ±20A
+  # 反馈帧: 0x200 + motor_id (ID1 → 0x201)
+  control_ids:
+    motors_1_to_4: 0x200
+    motors_5_to_8: 0x1FF
+  motors:
+    - {id: 1, leg: leg1, feedback_id: 0x201}
+    - {id: 2, leg: leg2, feedback_id: 0x202}
+    - {id: 3, leg: leg3, feedback_id: 0x203}
+    - {id: 4, leg: leg4, feedback_id: 0x204}

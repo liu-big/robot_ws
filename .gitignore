@@ -1,0 +1,36 @@
+# ROS2 / colcon
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+id_ed25519*
+
+# Runtime locks
+/tmp/c620*.lock
+
+# Large binaries (keep source)
+src/realtime/servo_rt
+
+# Archives
+*.tar.gz
+*.zip
