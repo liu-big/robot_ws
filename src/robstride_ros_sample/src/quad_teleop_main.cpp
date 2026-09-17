@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <csignal>
 #include <map>
 #include <memory>
@@ -10,7 +11,10 @@
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <fcntl.h>
 #include <string>
+#include <sys/file.h>
+#include <unistd.h>
 
 namespace {
 std::atomic<bool> g_sigint{false};
@@ -18,6 +22,19 @@ void on_sigint(int) { g_sigint.store(true); }
 
 float clampf(float v, float lo, float hi) {
   return std::max(lo, std::min(hi, v));
+}
+
+bool acquire_single_instance_lock() {
+  const int fd = open("/tmp/quad_teleop_ros2.lock", O_CREAT | O_RDWR, 0644);
+  if (fd < 0) {
+    return true;
+  }
+  if (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    std::fprintf(stderr, "已有 quad_teleop_ros2 在运行 → pkill -9 quad_teleop_ros2\n");
+    close(fd);
+    return false;
+  }
+  return true;
 }
 } // namespace
 
@@ -33,6 +50,8 @@ public:
     max_wheel_rad_s_ = declare_parameter("max_wheel_rad_s", 1.0);
     cmd_timeout_ms_ = declare_parameter("cmd_timeout_ms", 300);
     publish_hz_ = declare_parameter("publish_hz", 50);
+    require_stand_for_drive_ =
+        declare_parameter("require_stand_for_drive", true);
 
     std::vector<int64_t> active_wheels =
         declare_parameter("active_wheels", std::vector<int64_t>{1, 2, 3, 4});
@@ -42,8 +61,8 @@ public:
       }
     }
 
-    auto qos =
-        rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
+    // volatile + depth 1：低延迟实时控制，不缓存历史指令
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable();
 
     cmd_vel_sub_ = create_subscription<geometry_msgs::msg::Twist>(
         "/cmd_vel", qos, [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
@@ -91,15 +110,28 @@ public:
           create_publisher<std_msgs::msg::Empty>("/quad/goto/" + std::string(pose), qos);
     }
 
+    body_mode_pub_ = create_publisher<std_msgs::msg::String>(
+        "/quad/body_mode", qos);
+
     timer_ = create_wall_timer(
         std::chrono::milliseconds(1000 / std::max(10, publish_hz_)),
         [this]() { on_timer(); });
 
+    publish_body_mode("neutral");
     RCLCPP_INFO(get_logger(),
-                "quad_teleop | cmd_vel → /quad/wheels/cmd | pose → /quad/goto/*");
+                "quad_teleop | cmd_vel → /quad/wheels/cmd | pose → /quad/goto/* "
+                "| require_stand=%d",
+                static_cast<int>(require_stand_for_drive_));
   }
 
 private:
+  void publish_body_mode(const std::string &mode) {
+    body_mode_ = mode;
+    std_msgs::msg::String msg;
+    msg.data = mode;
+    body_mode_pub_->publish(msg);
+  }
+
   void publish_pose(const std::string &name) {
     if (pose_pubs_.count(name) == 0) {
       RCLCPP_WARN(get_logger(), "未知姿态: %s", name.c_str());
@@ -107,12 +139,15 @@ private:
     }
     std_msgs::msg::Empty msg;
     pose_pubs_.at(name)->publish(msg);
+    publish_body_mode(name);
     RCLCPP_INFO(get_logger(), "→ body pose %s", name.c_str());
   }
 
   void estop() {
     vx_ = vy_ = omega_ = 0.f;
     have_vel_.store(false);
+    publish_body_mode("estop");
+    publish_wheels({0.f, 0.f, 0.f, 0.f});
     std_msgs::msg::Empty empty;
     wheels_stop_pub_->publish(empty);
     quad_hold_pub_->publish(empty);
@@ -135,25 +170,45 @@ private:
     }
   }
 
+  void publish_wheels(const std::array<float, 4> &wheel_vel) {
+    std_msgs::msg::Float64MultiArray msg;
+    msg.data.resize(4);
+    for (size_t i = 0; i < 4; ++i) {
+      msg.data[i] = wheel_active_[i] ? static_cast<double>(wheel_vel[i]) : 0.0;
+    }
+    wheels_pub_->publish(msg);
+  }
+
   void on_timer() {
+    bool just_timed_out = false;
     if (cmd_timeout_ms_ > 0 && have_vel_.load()) {
       const int64_t age_ms =
           (now().nanoseconds() - last_vel_ns_.load()) / 1000000;
       if (age_ms > cmd_timeout_ms_) {
         vx_ = vy_ = omega_ = 0.f;
         have_vel_.store(false);
+        just_timed_out = true;
       }
     }
 
-    std::array<float, 4> wheel_vel{};
-    mecanum_ik(vx_, vy_, omega_, wheel_vel);
-
-    std_msgs::msg::Float64MultiArray msg;
-    msg.data.resize(4);
-    for (size_t i = 0; i < 4; ++i) {
-      msg.data[i] = wheel_active_[i] ? wheel_vel[i] : 0.0;
+    // 无 cmd_vel 时不发零速 — 避免 50Hz 抢占 /quad/wheels/cmd 直接控制
+    if (!have_vel_.load()) {
+      if (just_timed_out) {
+        publish_wheels({0.f, 0.f, 0.f, 0.f});
+      }
+      return;
     }
-    wheels_pub_->publish(msg);
+
+    float use_vx = vx_;
+    float use_vy = vy_;
+    float use_omega = omega_;
+    if (require_stand_for_drive_ && body_mode_ != "stand") {
+      use_vx = use_vy = use_omega = 0.f;
+    }
+
+    std::array<float, 4> wheel_vel{};
+    mecanum_ik(use_vx, use_vy, use_omega, wheel_vel);
+    publish_wheels(wheel_vel);
   }
 
   double wheel_base_x_{0.30};
@@ -164,6 +219,9 @@ private:
   double max_wheel_rad_s_{1.0};
   int cmd_timeout_ms_{300};
   int publish_hz_{50};
+  bool require_stand_for_drive_{true};
+
+  std::string body_mode_{"neutral"};
 
   float vx_{0.f};
   float vy_{0.f};
@@ -181,6 +239,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr wheels_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr wheels_stop_pub_;
   rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr quad_hold_pub_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr body_mode_pub_;
   std::map<std::string, rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr>
       pose_pubs_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -189,6 +248,9 @@ private:
 int main(int argc, char **argv) {
   std::signal(SIGINT, on_sigint);
   std::signal(SIGTERM, on_sigint);
+  if (!acquire_single_instance_lock()) {
+    return 1;
+  }
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<QuadTeleopNode>());
   rclcpp::shutdown();

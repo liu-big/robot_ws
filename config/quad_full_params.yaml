@@ -1,23 +1,23 @@
-# quad_rs_ros2 — 四足全机（8 关节全使能）
-# preset_mode=relative：各腿以启动时 home 为基准，同步施加 leg1 标定的小增量
-# 避免四条腿编码器零点不同却共用 leg1 绝对角度 → 乱抽
+# quad_rs_ros2 — 四足全机（8 关节同步平滑控制）
 quad_rs_node:
   ros__parameters:
     lift_can_interface: can0
     crouch_can_interface: can1
     active_legs: [1, 2, 3, 4]
     preset_mode: relative
-    loop_ms: 10
-    motion_kp: 35.0
-    motion_kd: 2.0
-    max_vel_rad_s: 0.25
-    max_accel_rad_s2: 0.5
-    max_command_step_rad: 0.15
+    command_relative: true
+    sync_motion: true
+    sync_command_window_ms: 25    # 分腿话题分批到达时的同步窗口
+    loop_ms: 5                    # 200Hz 控制环
+    motion_kp: 38.0
+    motion_kd: 3.2
+    max_vel_rad_s: 0.85           # 同步最大角速度
+    max_accel_rad_s2: 2.5         # S 曲线加减速
+    max_command_step_rad: 1.5     # 单步限幅 1.5 rad
     disable_on_exit: false
 
-    # 某腿运动方向反了时改为 -1（按 leg1~4 顺序）
-    lift_preset_sign: [1.0, 1.0, 1.0, 1.0]
-    crouch_preset_sign: [1.0, 1.0, 1.0, 1.0]
+    lift_preset_sign: [1.0, 1.0, -1.0, -1.0]
+    crouch_preset_sign: [1.0, 1.0, -1.0, -1.0]
 
     leg1_lift_motor_id: 1
     leg1_crouch_motor_id: 5
@@ -28,9 +28,9 @@ quad_rs_node:
     leg4_lift_motor_id: 4
     leg4_crouch_motor_id: 8
 
-    pose_neutral_lift: [6.05, 6.05, 6.05, 6.05]
-    pose_neutral_crouch: [2.45, 2.45, 2.45, 2.45]
-    pose_stand_lift: [6.13, 6.13, 6.13, 6.13]
-    pose_stand_crouch: [2.65, 2.65, 2.65, 2.65]
-    pose_crouch_lift: [5.97, 5.97, 5.97, 5.97]
-    pose_crouch_crouch: [2.78, 2.78, 2.78, 2.78]
+    pose_neutral_lift: [0.0, 0.0, 0.0, 0.0]
+    pose_neutral_crouch: [0.0, 0.0, 0.0, 0.0]
+    pose_stand_lift: [0.08, 0.08, 0.08, 0.08]
+    pose_stand_crouch: [0.20, 0.20, 0.20, 0.20]
+    pose_crouch_lift: [-0.08, -0.08, -0.08, -0.08]
+    pose_crouch_crouch: [0.33, 0.33, 0.33, 0.33]

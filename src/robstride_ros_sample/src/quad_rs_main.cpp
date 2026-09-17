@@ -11,6 +11,7 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/empty.hpp>
 #include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <string>
 #include <sys/file.h>
 #include <thread>
@@ -93,7 +94,16 @@ struct LegPair {
   bool active{false};
 };
 
-/// 四足 8×RS03（抬升 can0 ID1~4，拉杆 can1 ID5~8），话题 /leg{N}/lift|crouch/*
+/// 分腿话题分批到达时，暂存目标并在窗口内一起下发，避免 leg1 先动。
+struct AxisSyncGroup {
+  std::array<std::atomic<bool>, 4> pending{};
+  std::array<std::atomic<double>, 4> staged_target{};
+  std::atomic<bool> window_active{false};
+};
+
+/// 四足 8×RS03（抬升 can0 ID1~4，拉杆 can1 ID5~8）
+/// 整机同步话题：/quad/lift/command /quad/crouch/command /quad/legs/command
+/// 单腿调试：/leg{N}/lift|crouch/command
 class QuadRsNode : public rclcpp::Node {
 public:
   QuadRsNode() : Node("quad_rs_node") {
@@ -112,7 +122,10 @@ public:
     max_command_step_rad_ = declare_parameter("max_command_step_rad", 0.25);
     disable_on_exit_ = declare_parameter("disable_on_exit", false);
     can_debug_ = declare_parameter("can_debug", false);
-    preset_mode_ = declare_parameter("preset_mode", "absolute");
+    preset_mode_ = declare_parameter("preset_mode", "relative");
+    command_relative_ = declare_parameter("command_relative", true);
+    sync_motion_ = declare_parameter("sync_motion", true);
+    sync_command_window_ms_ = declare_parameter("sync_command_window_ms", 25);
 
     std::vector<int64_t> active_legs =
         declare_parameter("active_legs", std::vector<int64_t>{1});
@@ -147,8 +160,8 @@ public:
     load_sign_array("lift_preset_sign", lift_preset_sign_);
     load_sign_array("crouch_preset_sign", crouch_preset_sign_);
 
-    auto cmd_qos =
-        rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
+    // volatile + depth 1：低延迟；勿用 transient_local（会增加发现等待）
+    auto cmd_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable();
 
     for (auto &leg : legs_) {
       leg.active = false;
@@ -186,12 +199,14 @@ public:
       cmd_subs_.push_back(create_subscription<std_msgs::msg::Float64>(
           prefix + "/lift/command", cmd_qos,
           [this, n](const std_msgs::msg::Float64::SharedPtr msg) {
-            apply_command(legs_[n - 1].lift, static_cast<float>(msg->data));
+            apply_command(legs_[n - 1].lift, static_cast<float>(msg->data),
+                          n - 1, true);
           }));
       cmd_subs_.push_back(create_subscription<std_msgs::msg::Float64>(
           prefix + "/crouch/command", cmd_qos,
           [this, n](const std_msgs::msg::Float64::SharedPtr msg) {
-            apply_command(legs_[n - 1].crouch, static_cast<float>(msg->data));
+            apply_command(legs_[n - 1].crouch, static_cast<float>(msg->data),
+                          n - 1, false);
           }));
       hold_subs_.push_back(create_subscription<std_msgs::msg::Empty>(
           prefix + "/lift/hold", cmd_qos,
@@ -202,6 +217,12 @@ public:
           prefix + "/crouch/hold", cmd_qos,
           [this, n](const std_msgs::msg::Empty::SharedPtr) {
             latch_hold(legs_[n - 1].crouch);
+          }));
+
+      calibrate_subs_.push_back(create_subscription<std_msgs::msg::Empty>(
+          prefix + "/calibrate", cmd_qos,
+          [this, n](const std_msgs::msg::Empty::SharedPtr) {
+            calibrate_leg(n);
           }));
 
       if (n == 1) {
@@ -237,6 +258,8 @@ public:
 
     quad_hold_sub_ = create_subscription<std_msgs::msg::Empty>(
         "/quad/hold", cmd_qos, [this](const std_msgs::msg::Empty::SharedPtr) {
+          reset_sync_group(true);
+          reset_sync_group(false);
           for (auto &leg : legs_) {
             if (!leg.active) {
               continue;
@@ -246,6 +269,23 @@ public:
           }
           RCLCPP_INFO(get_logger(), "quad hold → 全部活跃关节锁定");
         });
+
+    quad_lift_cmd_sub_ = create_subscription<std_msgs::msg::Float64>(
+        "/quad/lift/command", cmd_qos,
+        [this](const std_msgs::msg::Float64::SharedPtr msg) {
+          apply_quad_joint_delta(true, static_cast<float>(msg->data));
+        });
+    quad_crouch_cmd_sub_ = create_subscription<std_msgs::msg::Float64>(
+        "/quad/crouch/command", cmd_qos,
+        [this](const std_msgs::msg::Float64::SharedPtr msg) {
+          apply_quad_joint_delta(false, static_cast<float>(msg->data));
+        });
+    quad_legs_cmd_sub_ =
+        create_subscription<std_msgs::msg::Float64MultiArray>(
+            "/quad/legs/command", cmd_qos,
+            [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg) {
+              apply_quad_legs_command(*msg);
+            });
 
     preset_subs_.push_back(create_subscription<std_msgs::msg::Empty>(
         "/quad/goto/neutral", cmd_qos,
@@ -262,12 +302,21 @@ public:
           apply_preset("crouch");
         }));
 
+    calibrate_subs_.push_back(create_subscription<std_msgs::msg::Empty>(
+        "/quad/calibrate", cmd_qos,
+        [this](const std_msgs::msg::Empty::SharedPtr) { calibrate_all(); }));
+
     worker_ = std::thread(&QuadRsNode::control_loop, this);
 
     RCLCPP_INFO(get_logger(),
-                "quad_rs lift=%s crouch=%s | kp=%.1f kd=%.2f v<=%.2f | preset=%s",
+                "quad_rs lift=%s crouch=%s | kp=%.1f kd=%.2f v<=%.2f a<=%.2f | "
+                "preset=%s cmd_rel=%d sync=%d win=%dms step<=%.2f loop=%dms | "
+                "topics: /quad/{lift,crouch,legs}/command",
                 lift_can.c_str(), crouch_can.c_str(), motion_kp_, motion_kd_,
-                max_vel_rad_s_, preset_mode_.c_str());
+                max_vel_rad_s_, max_accel_rad_s2_, preset_mode_.c_str(),
+                static_cast<int>(command_relative_),
+                static_cast<int>(sync_motion_), sync_command_window_ms_,
+                max_command_step_rad_, loop_ms_);
   }
 
   ~QuadRsNode() override {
@@ -343,8 +392,21 @@ private:
   void apply_pose_command(JointAxis &axis, float requested) {
     axis.user_target_rad.store(requested);
     axis.has_command.store(true);
-    RCLCPP_INFO(get_logger(), "%s pose → %.3f rad (pos=%.3f)",
-                axis.log_label.c_str(), requested, axis.motor->get_position());
+  }
+
+  void go_home_all() {
+    reset_sync_group(true);
+    reset_sync_group(false);
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      leg.lift.user_target_rad.store(leg.lift.home_rad);
+      leg.lift.has_command.store(true);
+      leg.crouch.user_target_rad.store(leg.crouch.home_rad);
+      leg.crouch.has_command.store(true);
+    }
+    RCLCPP_INFO(get_logger(), "→ 全机同步回初始位置 (home)");
   }
 
   void get_preset_arrays(const char *name, const std::array<double, 4> **lift,
@@ -374,6 +436,12 @@ private:
   }
 
   void apply_preset(const char *name) {
+    if (std::string(name) == "neutral") {
+      go_home_all();
+      return;
+    }
+    reset_sync_group(true);
+    reset_sync_group(false);
     for (auto &leg : legs_) {
       if (!leg.active) {
         continue;
@@ -387,22 +455,175 @@ private:
                 preset_mode_.c_str());
   }
 
-  void apply_command(JointAxis &axis, float requested) {
-    const float prev = static_cast<float>(axis.user_target_rad.load());
-    const float delta = requested - prev;
-    float clamped = requested;
-    if (std::abs(delta) > max_command_step_rad_) {
-      clamped =
-          prev + std::copysign(static_cast<float>(max_command_step_rad_), delta);
-      RCLCPP_WARN(get_logger(),
-                  "%s command %.3f 超出单步 ±%.2f → %.3f",
-                  axis.log_label.c_str(), requested, max_command_step_rad_,
-                  clamped);
+  float command_sign(int leg_idx, bool is_lift) const {
+    const float s = static_cast<float>(
+        is_lift ? lift_preset_sign_[leg_idx] : crouch_preset_sign_[leg_idx]);
+    return (std::abs(s) < 1e-6f) ? 1.f : s;
+  }
+
+  float resolve_command_target(const JointAxis &axis, float requested,
+                               int leg_idx, bool is_lift) const {
+    const float signed_req = requested * command_sign(leg_idx, is_lift);
+    if (command_relative_) {
+      return axis.home_rad + signed_req;
     }
-    axis.user_target_rad.store(clamped);
+    return signed_req;
+  }
+
+  float clamp_command_step(float prev, float target) const {
+    const float delta = target - prev;
+    if (std::abs(delta) > max_command_step_rad_) {
+      return prev +
+             std::copysign(static_cast<float>(max_command_step_rad_), delta);
+    }
+    return target;
+  }
+
+  void commit_axis_target(JointAxis &axis, float target) {
+    axis.user_target_rad.store(target);
     axis.has_command.store(true);
-    RCLCPP_INFO(get_logger(), "%s command → %.3f rad", axis.log_label.c_str(),
-                clamped);
+  }
+
+  void reset_sync_group(bool is_lift) {
+    auto &g = is_lift ? lift_sync_ : crouch_sync_;
+    for (int i = 0; i < 4; ++i) {
+      g.pending[i].store(false);
+    }
+    g.window_active.store(false);
+  }
+
+  void stage_sync_command(int leg_idx, bool is_lift, float clamped) {
+    auto &g = is_lift ? lift_sync_ : crouch_sync_;
+    auto &window_ns = is_lift ? lift_window_start_ns_ : crouch_window_start_ns_;
+    g.staged_target[leg_idx].store(clamped);
+    const bool was_pending = g.pending[leg_idx].exchange(true);
+    if (!was_pending && !g.window_active.exchange(true)) {
+      const auto now = std::chrono::steady_clock::now();
+      window_ns.store(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              now.time_since_epoch())
+              .count());
+    }
+  }
+
+  int count_active_legs() const {
+    int n = 0;
+    for (const auto &leg : legs_) {
+      if (leg.active) {
+        ++n;
+      }
+    }
+    return n;
+  }
+
+  void commit_sync_group(AxisSyncGroup &g, const std::atomic<int64_t> &window_ns,
+                         bool is_lift) {
+    int pending_count = 0;
+    for (int i = 0; i < 4; ++i) {
+      if (g.pending[i].load()) {
+        ++pending_count;
+      }
+    }
+    if (pending_count == 0) {
+      return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const auto start = std::chrono::steady_clock::time_point(
+        std::chrono::steady_clock::duration(window_ns.load()));
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - start)
+            .count();
+    const int active = count_active_legs();
+    const bool commit = (pending_count >= active) ||
+                        (elapsed_ms >= sync_command_window_ms_);
+    if (!commit) {
+      return;
+    }
+
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      const int i = leg.leg_index - 1;
+      if (!g.pending[i].load()) {
+        continue;
+      }
+      JointAxis &axis = is_lift ? leg.lift : leg.crouch;
+      commit_axis_target(axis,
+                         static_cast<float>(g.staged_target[i].load()));
+      g.pending[i].store(false);
+    }
+    g.window_active.store(false);
+  }
+
+  void commit_sync_groups() {
+    commit_sync_group(lift_sync_, lift_window_start_ns_, true);
+    commit_sync_group(crouch_sync_, crouch_window_start_ns_, false);
+  }
+
+  float motion_target_rad(const JointAxis &axis, int leg_idx,
+                          bool is_lift) const {
+    const auto &g = is_lift ? lift_sync_ : crouch_sync_;
+    if (g.pending[leg_idx].load()) {
+      return axis.trajectory.pos;
+    }
+    return static_cast<float>(axis.user_target_rad.load());
+  }
+
+  void apply_command(JointAxis &axis, float requested, int leg_idx,
+                     bool is_lift, bool immediate = false) {
+    const float prev = static_cast<float>(axis.user_target_rad.load());
+    const float target =
+        resolve_command_target(axis, requested, leg_idx, is_lift);
+    const float clamped = clamp_command_step(prev, target);
+    if (immediate || !sync_motion_) {
+      commit_axis_target(axis, clamped);
+      auto &g = is_lift ? lift_sync_ : crouch_sync_;
+      g.pending[leg_idx].store(false);
+      return;
+    }
+    stage_sync_command(leg_idx, is_lift, clamped);
+  }
+
+  void apply_quad_joint_delta(bool is_lift, float requested) {
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      const int i = leg.leg_index - 1;
+      JointAxis &axis = is_lift ? leg.lift : leg.crouch;
+      const float prev = static_cast<float>(axis.user_target_rad.load());
+      const float target =
+          resolve_command_target(axis, requested, i, is_lift);
+      const float clamped = clamp_command_step(prev, target);
+      commit_axis_target(axis, clamped);
+    }
+    reset_sync_group(is_lift);
+  }
+
+  void apply_quad_legs_command(
+      const std_msgs::msg::Float64MultiArray &msg) {
+    if (msg.data.size() < 8) {
+      RCLCPP_WARN(get_logger(),
+                  "/quad/legs/command 需要 8 个值 "
+                  "[leg1_lift,leg1_crouch,...,leg4_crouch]，收到 %zu",
+                  msg.data.size());
+      return;
+    }
+    reset_sync_group(true);
+    reset_sync_group(false);
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      const int i = leg.leg_index - 1;
+      const size_t base = static_cast<size_t>(i) * 2;
+      apply_command(leg.lift, static_cast<float>(msg.data[base]), i, true,
+                    true);
+      apply_command(leg.crouch, static_cast<float>(msg.data[base + 1]), i,
+                    false, true);
+    }
   }
 
   void latch_hold(JointAxis &axis) {
@@ -413,20 +634,70 @@ private:
     axis.runaway_count = 0;
   }
 
-  bool init_axis(JointAxis &axis, float kp, float kd) {
+  bool load_saved_home(const std::string &param_name, float &home_rad) {
+    if (!has_parameter(param_name)) {
+      return false;
+    }
+    const double v = get_parameter(param_name).as_double();
+    if (v < -100.0) {
+      return false;
+    }
+    home_rad = static_cast<float>(v);
+    return true;
+  }
+
+  void calibrate_axis(JointAxis &axis) {
+    const float pos = axis.motor->get_position();
+    axis.home_rad = pos;
+    latch_hold(axis);
+    RCLCPP_WARN(get_logger(), "%s 标定 home=%.3f rad", axis.log_label.c_str(),
+                axis.home_rad);
+  }
+
+  void calibrate_leg(int leg_index) {
+    auto &leg = legs_[leg_index - 1];
+    if (!leg.active) {
+      return;
+    }
+    calibrate_axis(leg.lift);
+    calibrate_axis(leg.crouch);
+    RCLCPP_WARN(get_logger(), "→ leg%d 已标定（当前位置 = 零点）", leg_index);
+  }
+
+  void calibrate_all() {
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      calibrate_axis(leg.lift);
+      calibrate_axis(leg.crouch);
+    }
+    RCLCPP_WARN(get_logger(), "→ 全机标定完成：当前姿态已设为零点");
+  }
+
+  bool init_axis(JointAxis &axis, int leg_idx, bool is_lift, float kp,
+                 float kd) {
     if (!axis.motor->init_motion_mode(kp, kd)) {
       RCLCPP_ERROR(get_logger(), "%s init_motion_mode 失败",
                    axis.log_label.c_str());
       return false;
     }
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 5; ++i) {
       axis.motor->send_motion_hold(axis.motor->get_position(), 0.f, kp, kd);
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     latch_hold(axis);
     axis.home_rad = axis.motor->get_position();
-    RCLCPP_INFO(get_logger(), "%s 已使能，home=%.3f rad",
-                axis.log_label.c_str(), axis.home_rad);
+    const std::string home_param =
+        "home_leg" + std::to_string(leg_idx + 1) + (is_lift ? "_lift" : "_crouch");
+    if (load_saved_home(home_param, axis.home_rad)) {
+      RCLCPP_INFO(get_logger(), "%s 已使能，home=%.3f rad (来自 %s)",
+                  axis.log_label.c_str(), axis.home_rad, home_param.c_str());
+    } else {
+      RCLCPP_INFO(get_logger(), "%s 已使能，home=%.3f rad (启动时编码器)",
+                  axis.log_label.c_str(), axis.home_rad);
+    }
+    latch_hold(axis);
     return true;
   }
 
@@ -438,24 +709,92 @@ private:
       if (!leg.active) {
         continue;
       }
-      if (!init_axis(leg.lift, kp, kd) || !init_axis(leg.crouch, kp, kd)) {
+      const int idx = leg.leg_index - 1;
+      if (!init_axis(leg.lift, idx, true, kp, kd) ||
+          !init_axis(leg.crouch, idx, false, kp, kd)) {
         return;
       }
     }
 
     const auto loop_period = std::chrono::milliseconds(loop_ms_);
     const float dt = static_cast<float>(loop_ms_) / 1000.f;
+    const float max_vel = static_cast<float>(max_vel_rad_s_);
+    const float max_accel = static_cast<float>(max_accel_rad_s2_);
     int aggregate_div = 0;
+
+    std::vector<JointAxis *> axes;
+    axes.reserve(8);
+    for (auto &leg : legs_) {
+      if (!leg.active) {
+        continue;
+      }
+      axes.push_back(&leg.lift);
+      axes.push_back(&leg.crouch);
+    }
 
     while (running_.load() && !g_sigint.load()) {
       const auto t0 = std::chrono::steady_clock::now();
-      for (auto &leg : legs_) {
-        if (!leg.active) {
-          continue;
+      commit_sync_groups();
+
+      float max_dist = 0.f;
+      if (sync_motion_ && smooth_enabled_) {
+        for (auto *axis : axes) {
+          int leg_idx = 0;
+          bool is_lift = true;
+          for (auto &leg : legs_) {
+            if (!leg.active) {
+              continue;
+            }
+            const int i = leg.leg_index - 1;
+            if (&leg.lift == axis) {
+              leg_idx = i;
+              is_lift = true;
+              break;
+            }
+            if (&leg.crouch == axis) {
+              leg_idx = i;
+              is_lift = false;
+              break;
+            }
+          }
+          const float tgt = motion_target_rad(*axis, leg_idx, is_lift);
+          max_dist =
+              std::max(max_dist, std::abs(tgt - axis->trajectory.pos));
         }
-        step_axis(leg.lift, dt, kp, kd);
-        step_axis(leg.crouch, dt, kp, kd);
       }
+
+      for (auto *axis : axes) {
+        int leg_idx = 0;
+        bool is_lift = true;
+        for (auto &leg : legs_) {
+          if (!leg.active) {
+            continue;
+          }
+          const int i = leg.leg_index - 1;
+          if (&leg.lift == axis) {
+            leg_idx = i;
+            is_lift = true;
+            break;
+          }
+          if (&leg.crouch == axis) {
+            leg_idx = i;
+            is_lift = false;
+            break;
+          }
+        }
+        const float tgt = motion_target_rad(*axis, leg_idx, is_lift);
+        float vel_lim = max_vel;
+        if (sync_motion_ && smooth_enabled_ && max_dist > 1e-4f) {
+          const float dist = std::abs(tgt - axis->trajectory.pos);
+          if (dist > 1e-4f) {
+            vel_lim = max_vel * (dist / max_dist);
+          } else {
+            vel_lim = 0.f;
+          }
+        }
+        step_axis(*axis, dt, kp, kd, vel_lim, tgt);
+      }
+
       if (++aggregate_div >= std::max(1, 1000 / loop_ms_)) {
         aggregate_div = 0;
         publish_aggregate_state();
@@ -467,19 +806,18 @@ private:
     }
   }
 
-  void step_axis(JointAxis &axis, float dt, float kp, float kd) {
-    const float user_target = static_cast<float>(axis.user_target_rad.load());
-    float cmd_pos = user_target;
+  void step_axis(JointAxis &axis, float dt, float kp, float kd, float vel_lim,
+                 float motion_target) {
+    float cmd_pos = motion_target;
     float cmd_vel = 0.f;
 
     if (smooth_enabled_) {
-      axis.trajectory.step(user_target, dt,
-                           static_cast<float>(max_vel_rad_s_),
+      axis.trajectory.step(motion_target, dt, vel_lim,
                            static_cast<float>(max_accel_rad_s2_));
       cmd_pos = axis.trajectory.pos;
       cmd_vel = axis.trajectory.vel;
     } else {
-      axis.trajectory.reset(user_target);
+      axis.trajectory.reset(motion_target);
     }
 
     auto [pos, vel, torque, temp] =
@@ -494,13 +832,17 @@ private:
       axis.runaway_count = 0;
     }
 
-    sensor_msgs::msg::JointState js;
-    js.header.stamp = now();
-    js.name = {axis.joint_name};
-    js.position = {static_cast<double>(pos)};
-    js.velocity = {static_cast<double>(vel)};
-    js.effort = {static_cast<double>(torque)};
-    axis.state_pub->publish(js);
+    static int state_div = 0;
+    if (++state_div >= 4) {
+      state_div = 0;
+      sensor_msgs::msg::JointState js;
+      js.header.stamp = now();
+      js.name = {axis.joint_name};
+      js.position = {static_cast<double>(pos)};
+      js.velocity = {static_cast<double>(vel)};
+      js.effort = {static_cast<double>(torque)};
+      axis.state_pub->publish(js);
+    }
   }
 
   void publish_aggregate_state() {
@@ -542,18 +884,32 @@ private:
   double max_command_step_rad_{0.25};
   bool disable_on_exit_{false};
   bool can_debug_{false};
-  std::string preset_mode_{"absolute"};
+  std::string preset_mode_{"relative"};
+  bool command_relative_{true};
+  bool sync_motion_{true};
+  int sync_command_window_ms_{25};
   std::array<double, 4> lift_preset_sign_{1, 1, 1, 1};
   std::array<double, 4> crouch_preset_sign_{1, 1, 1, 1};
   int loop_ms_{10};
+
+  AxisSyncGroup lift_sync_;
+  AxisSyncGroup crouch_sync_;
+  std::atomic<int64_t> lift_window_start_ns_{0};
+  std::atomic<int64_t> crouch_window_start_ns_{0};
 
   std::atomic<bool> running_{true};
   std::thread worker_;
   rclcpp::Publisher<sensor_msgs::msg::JointState>::SharedPtr joint_state_pub_;
   rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr quad_hold_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr quad_lift_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr quad_crouch_cmd_sub_;
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr
+      quad_legs_cmd_sub_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr> cmd_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr> hold_subs_;
   std::vector<rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr> preset_subs_;
+  std::vector<rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr>
+      calibrate_subs_;
 };
 
 int main(int argc, char **argv) {

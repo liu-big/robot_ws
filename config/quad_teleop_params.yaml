@@ -3,10 +3,11 @@ quad_teleop_node:
   ros__parameters:
     wheel_base_x: 0.30
     wheel_base_y: 0.20
-    max_vx: 0.5
-    max_vy: 0.5
-    max_omega: 1.0
-    max_wheel_rad_s: 1.0
-    cmd_timeout_ms: 300
-    publish_hz: 50
+    max_vx: 0.8
+    max_vy: 0.8
+    max_omega: 1.5
+    max_wheel_rad_s: 2.0
+    cmd_timeout_ms: 600
+    publish_hz: 100
     active_wheels: [1, 2]
+    require_stand_for_drive: false

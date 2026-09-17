@@ -18,12 +18,19 @@ stop_all() {
     [[ -f "$f" ]] && kill "$(cat "$f")" 2>/dev/null || true
   done
   rm -f "$PID_RS" "$PID_C620" "$PID_TEL"
+  pkill -9 -f 'lib/rs_motor_ros2/quad_rs_ros2' 2>/dev/null || true
+  pkill -9 -f 'lib/rs_motor_ros2/c620_quad_ros2' 2>/dev/null || true
+  pkill -9 -f 'lib/rs_motor_ros2/c620_ros2' 2>/dev/null || true
+  pkill -9 -f 'lib/rs_motor_ros2/quad_teleop_ros2' 2>/dev/null || true
+  pkill -9 -f 'lib/rs_motor_ros2/leg1_dual_ros2' 2>/dev/null || true
   pkill -9 quad_rs_ros2 2>/dev/null || true
   pkill -9 c620_quad_ros2 2>/dev/null || true
   pkill -9 c620_ros2 2>/dev/null || true
   pkill -9 quad_teleop_ros2 2>/dev/null || true
   pkill -9 leg1_dual_ros2 2>/dev/null || true
-  rm -f /tmp/quad_rs_ros2.lock /tmp/c620_quad_ros2.lock /tmp/c620_ros2.lock
+  rm -f /tmp/quad_rs_ros2.lock /tmp/c620_quad_ros2.lock /tmp/c620_ros2.lock \
+        /tmp/quad_teleop_ros2.lock
+  find /dev/shm -maxdepth 1 -name '*fastrtps*' -delete 2>/dev/null || true
   echo "已停止"
 }
 
@@ -40,16 +47,24 @@ if [[ -f "$WS_DIR/install/setup.bash" ]]; then
   # shellcheck source=/dev/null
   source "$WS_DIR/install/setup.bash"
 fi
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/ros-env.sh"
 
-"$SCRIPT_DIR/can-hub-up.sh" can0 can1 can3
+"$SCRIPT_DIR/can-hub-up.sh" can0 can1 can2
 
-echo "=== quad_rs_ros2 (8×灵足, active_legs=1~4) ==="
+RS_ARGS=(--params-file "$WS_DIR/config/quad_full_params.yaml")
+if [[ -f "$WS_DIR/config/quad_home.yaml" ]]; then
+  RS_ARGS+=(--params-file "$WS_DIR/config/quad_home.yaml")
+  echo "  (加载标定: config/quad_home.yaml)"
+fi
+
+echo "=== quad_rs_ros2 (8×灵足, active_legs=1~4, 相对坐标) ==="
 nohup ros2 run rs_motor_ros2 quad_rs_ros2 --ros-args \
-  --params-file "$WS_DIR/config/quad_full_params.yaml" \
+  "${RS_ARGS[@]}" \
   >"$LOG_DIR/quad_rs.log" 2>&1 &
 echo $! >"$PID_RS"
 
-echo "=== c620_quad_ros2 (can3 麦轮) ==="
+echo "=== c620_quad_ros2 (can2 麦轮) ==="
 nohup ros2 run rs_motor_ros2 c620_quad_ros2 --ros-args \
   --params-file "$WS_DIR/config/c620_quad_params.yaml" \
   >"$LOG_DIR/c620_quad.log" 2>&1 &
@@ -75,7 +90,7 @@ echo "  日志: $LOG_DIR/"
 echo "  站起: ~/robot_ws/scripts/quad-goto-pose.sh stand"
 echo "  遥控: ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \\"
 echo "          '{linear: {x: 0.3}, angular: {z: 0.0}}' --rate 20 \\"
-echo "          --qos-reliability reliable --qos-durability transient_local"
-echo "  急停: ros2 topic pub /quad/e_stop std_msgs/msg/Empty '{}' --once \\"
-echo "          --qos-reliability reliable --qos-durability transient_local"
+echo "          --qos-reliability reliable -w 0"
+echo "  急停: ~/robot_ws/scripts/estop.sh"
+echo "  回零: ~/robot_ws/scripts/quad-pub.sh /quad/goto/neutral"
 echo "  停止: ~/robot_ws/scripts/run-quad-all.sh stop"

@@ -66,10 +66,6 @@ poses:
 
 scripts:
   index: docs/scripts.md
-  start_all: scripts/run-leg1-all.sh
-  start_dual: scripts/run-leg1-dual.sh
-  start_c620: scripts/run-c620.sh
-  goto_pose: scripts/leg1-goto-pose.sh
-  delta_pose: scripts/leg1-pose-ros.sh
-  probe: scripts/rs-probe.sh
-  probe_all: scripts/rs-probe-all.sh
+  start_all: scripts/run-quad-all.sh
+  goto_pose: scripts/quad-goto-pose.sh
+  estop: scripts/estop.sh

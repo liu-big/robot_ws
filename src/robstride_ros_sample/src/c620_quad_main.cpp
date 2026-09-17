@@ -63,6 +63,7 @@ float friction_ff(float ramp_rpm, float coulomb_a, float viscous_a,
   if (mag < min_rpm) {
     return 0.f;
   }
+  // 库仑 + 随转速线性增加的粘性前馈，使高速指令有明显更大电流
   float ff = coulomb_a;
   if (viscous_ref_rpm > 1.f && viscous_a > 1e-6f) {
     ff += viscous_a * mag / viscous_ref_rpm;
@@ -177,8 +178,7 @@ public:
       }
     }
 
-    auto qos =
-        rclcpp::QoS(rclcpp::KeepLast(10)).reliable().transient_local();
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable();
 
     wheels_cmd_sub_ =
         create_subscription<std_msgs::msg::Float64MultiArray>(
@@ -217,16 +217,19 @@ public:
     std::string active_list;
     for (auto &w : wheels_) {
       if (w.active) {
-        active_list += w.joint_name + "(CAN" +
-                       std::to_string(w.motor_id) + ") ";
+        active_list += w.joint_name + "(id" +
+                       std::to_string(w.motor_id) + ",sgn=" +
+                       (w.sign >= 0.f ? "+" : "") +
+                       std::to_string(static_cast<int>(w.sign)) + ") ";
       }
     }
     RCLCPP_INFO(get_logger(),
-                "c620_quad can=%s | active wheels: %s| ff=%.1fA max=%.1fA "
-                "sync=%d stop_brake=%.1fA",
+                "c620_quad can=%s | active wheels: %s| "
+                "ff=%.2f+%.2fA@%.0frpm max=%.1fA kp=%.3f sync=%d",
                 can_iface.c_str(), active_list.c_str(),
-                vel_friction_coulomb_a_, max_current_a_,
-                static_cast<int>(sync_wheels_), stop_brake_a_);
+                vel_friction_coulomb_a_, vel_friction_a_,
+                vel_friction_full_rpm_, max_current_a_, vel_kp_,
+                static_cast<int>(sync_wheels_));
   }
 
   ~C620QuadNode() override {
@@ -411,9 +414,8 @@ private:
       const float dv = static_cast<float>(rpm_ramp_rpm_s_) * dt;
       const bool cmd_live = !stale;
       const bool any_drive = cmd_live && moving_n > 0;
-      const float pid_limit = std::max(
-          0.5f, static_cast<float>(max_current_a_) -
-                    static_cast<float>(vel_friction_coulomb_a_));
+      // PID 用满电流上限；摩擦前馈另计，总电流在下方 clamp 到 max_a
+      const float pid_limit = static_cast<float>(max_current_a_);
       const float max_a = static_cast<float>(max_current_a_);
       const float brake_a = static_cast<float>(stop_brake_a_);
       const float brake_min_rpm = static_cast<float>(stop_brake_min_rpm_);

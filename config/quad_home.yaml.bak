@@ -1,0 +1,11 @@
+# 灵足关节零点标定 — 2026-09-16 自动生成
+quad_rs_node:
+  ros__parameters:
+    home_leg1_lift: 5.922881
+    home_leg1_crouch: 2.398069
+    home_leg2_lift: -0.449470
+    home_leg2_crouch: 5.504858
+    home_leg3_lift: 4.848678
+    home_leg3_crouch: 2.174867
+    home_leg4_lift: 0.967972
+    home_leg4_crouch: 1.252534

@@ -18,6 +18,6 @@ ros2:
 
 scripts:
   index: docs/scripts.md
-  start_all: scripts/run-leg1-all.sh
-  start_rs: scripts/run-quad-rs.sh
-  start_c620: scripts/run-c620.sh
+  start_all: scripts/run-quad-all.sh
+  goto_pose: scripts/quad-goto-pose.sh
+  estop: scripts/estop.sh
