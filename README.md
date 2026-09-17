@@ -22,6 +22,7 @@ Ubuntu 22.04 · ROS2 Humble · 灵足 RS03（8 关节）+ 大疆 C620 麦轮（c
 - [日志与排障](#日志与排障)
 - [目录结构](#目录结构)
 - [相关文档](#相关文档)
+- [更新记录](#更新记录)
 
 ---
 
@@ -199,6 +200,8 @@ pkill -f quad_remote/server.py
 ## 手机遥控 QUAD Remote
 
 横屏双摇杆界面（`QUAD · REMOTE / 01`），无需安装 App，手机浏览器即可。
+
+![QUAD Remote 手机遥控界面](docs/images/quad-remote-ui.png)
 
 ### 界面功能
 

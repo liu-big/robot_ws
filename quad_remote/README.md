@@ -4,6 +4,8 @@
 
 无需安装 App；与 [`robot_ws`](../README.md) 配合使用。
 
+![QUAD Remote 界面](../docs/images/quad-remote-ui.png)
+
 ---
 
 ## 目录
