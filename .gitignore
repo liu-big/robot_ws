@@ -34,3 +34,6 @@ src/realtime/servo_rt
 # Archives
 *.tar.gz
 *.zip
+
+# Local calibration backups
+config/quad_home.yaml.bak
