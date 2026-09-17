@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+  <meta name="theme-color" content="#101311">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>QUAD · Remote</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<main class="remote">
+  <header class="topbar">
+    <div class="brand"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M5 3h7v7H5zM16 3h7v7h-7zM5 14h7v7H5zM16 14h7v7h-7z" fill="currentColor"/><path d="m20 20 5 5" stroke="currentColor" stroke-width="3"/></svg><strong>QUAD</strong><span class="edition">REMOTE / 01</span></div>
+    <div class="connection"><span id="demoBadge" class="demo-badge" hidden>DEMO</span><span class="link-state" id="rosLink"><i></i><span id="rosText">ROS 等待</span></span><span class="latency"><svg viewBox="0 0 18 18" aria-hidden="true"><path d="M2 13v3m4-7v7m4-11v11m4-15v15"/></svg><span>WS</span><b id="ping">—</b><small>ms</small></span><button id="fullscreen" class="icon-button" title="全屏" aria-label="进入全屏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button></div>
+  </header>
+
+  <section class="controls" aria-label="机器人遥控手柄">
+    <section class="stick-column">
+      <div class="section-caption"><span><i class="tiny-square"></i> TRANSLATION</span><span>01</span></div>
+      <div class="stick-shell">
+        <div id="moveStick" class="joystick" aria-label="移动摇杆：向上前进，向左横移，支持双指" role="group">
+          <div class="stick-ring ring-inner"></div><div class="axis axis-x"></div><div class="axis axis-y"></div>
+          <span class="direction north">前 <b>↑</b></span><span class="direction south"><b>↓</b> 后</span><span class="direction west">←</span><span class="direction east">→</span>
+          <div class="stick-center"><div class="stick-thumb" id="moveThumb"><span></span></div></div>
+        </div>
+      </div>
+      <div class="stick-caption"><strong>移动</strong><span>VX <em>+</em> VY</span><small>前后 / 横移</small></div>
+    </section>
+
+    <section class="robot-column">
+      <div class="mode-line"><span class="mode-dot" id="modeDot"></span><strong id="mode">UNKNOWN</strong></div>
+      <span class="mode-description" id="modeDescription">等待模式反馈</span>
+      <button class="robot-open" id="robotOpen" aria-label="查看关节和轮子实时状态">
+        <svg class="robot" viewBox="0 0 260 248" role="img" aria-label="机器人俯视图：前左 FL、前右 FR、后右 RR、后左 RL">
+          <defs><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".65" fill="#303831"/></pattern><pattern id="tread" width="8" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(28)"><path d="M0 0v10" stroke="#4b584c" stroke-width="3"/></pattern></defs>
+          <rect x="10" y="26" width="240" height="202" fill="url(#grid)"/>
+          <path class="front-arrow" d="m123 18 7-7 7 7m-7-7v17"/><text class="svg-micro" x="147" y="23">FRONT</text>
+          <path class="robot-guide" d="M130 39v183M32 130h196"/>
+          <path class="robot-leg" d="m103 92-29-19H63m94 19 29-19h11m-94 88-29 19H63m94-19 29 19h11"/>
+          <path class="robot-leg-highlight" d="m103 100-29-20m83 20 29-20m-83 74-29 20m83-20 29 20"/>
+          <rect class="robot-body" x="93" y="58" width="74" height="144" rx="23"/>
+          <path class="body-panel" d="M109 75h42l7 14v75l-12 19h-32l-12-19V89z"/>
+          <path class="body-detail" d="M112 99h36m-36 5h36m-36 5h36M115 171h30"/>
+          <path class="nose" d="m123 84 7-8 7 8"/>
+          <rect class="body-mark" x="124" y="120" width="5" height="5"/><rect class="body-mark" x="132" y="120" width="5" height="5"/><rect class="body-mark" x="124" y="128" width="5" height="5"/><rect class="body-mark" x="132" y="128" width="5" height="5"/>
+          <text class="body-label" x="130" y="152" text-anchor="middle">Q — 01</text>
+          <g id="wheelFL" class="wheel" data-status="unavailable"><rect x="49" y="52" width="25" height="45" rx="7"/><rect class="tread" x="53" y="55" width="17" height="39" rx="4"/><circle cx="38" cy="56" r="3"/><text x="36" y="77" text-anchor="end">FL</text><text class="wheel-speed" id="speedFL" x="37" y="91" text-anchor="end">—</text></g>
+          <g id="wheelFR" class="wheel" data-status="unavailable"><rect x="186" y="52" width="25" height="45" rx="7"/><rect class="tread" x="190" y="55" width="17" height="39" rx="4"/><circle cx="222" cy="56" r="3"/><text x="224" y="77">FR</text><text class="wheel-speed" id="speedFR" x="224" y="91">—</text></g>
+          <g id="wheelRL" class="wheel" data-status="unavailable"><rect x="49" y="158" width="25" height="45" rx="7"/><rect class="tread" x="53" y="161" width="17" height="39" rx="4"/><circle cx="38" cy="162" r="3"/><text x="36" y="183" text-anchor="end">RL</text><text class="wheel-speed" id="speedRL" x="37" y="197" text-anchor="end">—</text></g>
+          <g id="wheelRR" class="wheel" data-status="unavailable"><rect x="186" y="158" width="25" height="45" rx="7"/><rect class="tread" x="190" y="161" width="17" height="39" rx="4"/><circle cx="222" cy="162" r="3"/><text x="224" y="183">RR</text><text class="wheel-speed" id="speedRR" x="224" y="197">—</text></g>
+          <path class="corner" d="M25 47v-9h9m192 0h9v9M25 207v9h9m192 0h9v-9"/>
+        </svg>
+        <span class="detail-hint">实时状态 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5"/></svg></span>
+      </button>
+      <div class="velocity-readouts" aria-label="当前控制指令值">
+        <div><span>VX</span><strong id="vx">0.00</strong></div><div><span>VY</span><strong id="vy">0.00</strong></div><div><span>WZ</span><strong id="wz">0.00</strong></div>
+      </div>
+      <div class="command-label">CMD · 控制指令</div>
+    </section>
+
+    <section class="stick-column yaw-column">
+      <div class="section-caption"><span><i class="tiny-square"></i> ROTATION</span><span>02</span></div>
+      <div class="stick-shell">
+        <div id="yawStick" class="joystick yaw" aria-label="旋转摇杆：向左左旋，向右右旋，支持双指" role="group">
+          <div class="stick-ring ring-inner"></div><div class="axis axis-x"></div><div class="axis axis-y"></div>
+          <span class="direction north">↶ <span>YAW</span> ↷</span><span class="direction west">←</span><span class="direction east">→</span><span class="yaw-track"></span>
+          <div class="stick-center"><div class="stick-thumb" id="yawThumb"><span></span></div></div>
+        </div>
+      </div>
+      <div class="stick-caption"><strong>旋转</strong><span>WZ</span><small>左旋 / 右旋</small></div>
+    </section>
+  </section>
+
+  <footer class="bottom">
+    <div class="bottom-topline">
+      <span class="session-label" id="sessionLabel">正在连接设备…</span>
+      <div class="speed-control" role="group" aria-label="速度倍率">
+        <span>SPEED</span>
+        <input type="range" id="speedSlider" class="speed-slider" min="0.4" max="1.5" step="0.05" value="0.8" aria-valuemin="0.4" aria-valuemax="1.5" aria-valuenow="0.8">
+        <b id="speedValue">0.80×</b>
+      </div>
+      <span class="release-note">松手即停</span>
+    </div>
+    <nav class="pose-buttons" aria-label="机器人姿态">
+      <button data-pose="stand" disabled><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M8 7h12M9 7l-4 8v5m14-13 4 8v5M9 3h10"/></svg><span>STAND</span><small>站立</small><i></i></button>
+      <button data-pose="neutral" disabled><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M8 10h12M9 10l-4 5v5m14-10 4 5v5M9 6h10"/></svg><span>NEUTRAL</span><small>中立</small><i></i></button>
+      <button data-pose="crouch" disabled><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M8 14h12M9 14l-5 3v3m15-6 5 3v3M9 10h10"/></svg><span>CROUCH</span><small>蹲伏</small><i></i></button>
+    </nav>
+  </footer>
+</main>
+
+<dialog id="details" aria-labelledby="detailsTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-heading"><div><span class="eyebrow">LIVE TELEMETRY</span><h1 id="detailsTitle">机器人状态 <small>20 Hz</small></h1></div><button id="closeDetails" class="icon-button" aria-label="关闭状态面板"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <div class="telemetry-tables">
+    <section><h2>Joint <span>08 AXES</span></h2><table><thead><tr><th>关节</th><th>Position<small>rad</small></th><th>Velocity<small>rad/s</small></th><th>Effort<small>N·m</small></th></tr></thead><tbody id="jointRows"></tbody></table></section>
+    <section><h2>Wheel <span>04 WHEELS</span></h2><table><thead><tr><th>轮子</th><th>Position<small>rad</small></th><th>Velocity<small>rad/s</small></th><th>Current<small>A</small></th></tr></thead><tbody id="wheelRows"></tbody></table><p class="telemetry-note">绿点表示 ROS 反馈正在更新。底层未提供逐电机掉线标记；轮子位置为编码器折算值，非累计里程。</p><div class="sheet-mode"><span>MODE</span><strong id="detailMode">UNKNOWN</strong><small>协调层模式反馈 · 非姿态到位判定</small></div></section>
+  </div>
+</dialog>
+<div id="toast" role="status" hidden></div>
+<div class="portrait-hint"><svg viewBox="0 0 52 52" aria-hidden="true"><rect x="10" y="15" width="32" height="22" rx="4"/><path d="m6 19-3-5 6-2m-6 2c5-10 21-11 28-5M46 33l3 5-6 2m6-2c-5 10-21 11-28 5"/></svg><strong>横屏，开始遥控</strong><span>旋转手机以获得完整双摇杆操作空间</span></div>
+</body>
+</html>

@@ -25,10 +25,11 @@ source install/setup.bash
 ~/robot_ws/scripts/run-quad-all.sh
 ```
 
-手机遥控（[`~/quad_remote`](../quad_remote) 或同目录 `quad_remote`）：
+手机遥控（[`quad_remote/`](quad_remote/) 或 `~/quad_remote`）：
 
 ```bash
 ~/quad_remote/start-all.sh
+# 或: ~/robot_ws/quad_remote/start-all.sh
 # 手机: http://<主机IP>:8765/
 ```
 
