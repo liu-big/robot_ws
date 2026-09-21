@@ -1,0 +1,57 @@
+# 第四条腿 — 当前测试台配置
+#
+# 当前（单电机台架）:
+#   can0 → 灵足 RS03 ×1，CAN_ID=0x7F，host=0xFF
+#
+# 未接:
+#   第二台 RS03、can1 大疆 C620 麦轮
+#
+# 手册:
+#   RS03: product_manual_robStride03-9c54db7a.pdf
+#   C620: RoboMaster C620无刷电机调速器使用说明（中英日）V1.01.pdf
+
+leg: 4
+status: testing
+bench_mode: single_motor_rs03
+
+can0_robstride:
+  interface: can0
+  bitrate: 1000000
+  frame_type: extended
+  host_id: 0xFF
+  test_velocity_rad_s: 0.1
+  control_mode: position_csp   # 发角度，不用速度模式
+  motors:
+    - id: 0x7F
+      type: RS03
+      role: bench
+      name: rs03_single
+      status: connected
+
+can1_mecanum:
+  interface: can1
+  status: disconnected
+  motors:
+    - id: 1
+      esc: C620
+      motor: M3508
+      role: mecanum_wheel
+      name: leg4_wheel
+      feedback_id: 0x201
+
+# 规划（第二台 RS03 接上后）:
+planned_motors:
+  - {id: 0x01, role: joint, name: leg4_joint}
+  - {id: 0x02, role: lift,  name: leg4_lift}
+
+test_order:
+  - step: 1
+    action: "can-hub-up.sh + rs-probe.sh 7F"
+  - step: 2
+    action: "已过时 — 见 config/quadruped.yaml 与 docs/scripts.md"
+  - step: 3
+    action: "ros2 param set /motor_control_set_node target_angle_rad <rad>  运行中改角度"
+  - step: 3
+    action: "接第二台 → 上位机设 0x01/0x02，更新 main.cpp"
+  - step: 4
+    action: "C620 接上后再启 can1"

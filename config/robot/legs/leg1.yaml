@@ -1,0 +1,71 @@
+# 第一条腿（左前 FL）— 双灵足 + 麦轮
+# 整机 ID 见 config/quadruped.yaml：抬升=1, 拉杆=5, 麦轮 C620=1
+#
+# 接线:
+#   can0 → 灵足 RS03 ×2  (抬升 ID=1, 趴下/起身 ID=5)
+#   can1 → 大疆 C620 + M3508 麦轮 (ID=1)
+#
+# ROS2 节点:
+#   leg1_dual_ros2  — 双灵足位置控制
+#   c620_ros2       — 麦轮速度 + 锁位
+
+leg: 1
+status: bringup
+
+ros2:
+  dual_node: leg1_dual_node
+  params_file: config/leg1_dual_params.yaml
+
+  topics:
+    lift_command: /leg1/lift/command
+    crouch_command: /leg1/crouch/command
+    lift_state: /leg1/lift/state
+    crouch_state: /leg1/crouch/state
+    hold: /leg1/hold
+    goto_neutral: /leg1/goto/neutral
+    goto_stand: /leg1/goto/stand
+    goto_crouch: /leg1/goto/crouch
+
+can0_robstride:
+  interface: can0
+  bitrate: 1000000
+  host_id: 0xFF
+  control_mode: motion_hold
+  motors:
+    - id: 1
+      type: RS03
+      role: lift
+      name: leg1_lift
+      direction: "+rad 抬升"
+    - id: 5
+      type: RS03
+      role: crouch
+      name: leg1_crouch
+      direction: "+rad 趴下关节抬高（台架实测）"
+
+can1_c620:
+  interface: can1
+  motor_id: 1
+  gear_ratio: 19
+  role: wheel
+
+# 预设姿态 (rad) — 与 leg1_dual_params.yaml 同步
+poses:
+  neutral:
+    lift: 6.05
+    crouch: 2.45
+    note: 上电默认休息位
+  stand:
+    lift: 6.13
+    crouch: 2.65
+    note: 微抬升 + 趴下关节略高
+  crouch:
+    lift: 5.97
+    crouch: 2.78
+    note: 略蹲，趴下关节更高
+
+scripts:
+  index: docs/scripts.md
+  start_all: scripts/run-quad-all.sh
+  goto_pose: scripts/quad-goto-pose.sh
+  estop: scripts/estop.sh

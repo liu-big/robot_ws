@@ -1,0 +1,29 @@
+# c620_quad_ros2 — can2 单帧 0x200，ID1+ID2 在线
+# 话题 data: [leg1, leg2, leg3, leg4] 轮缘角速度 rad/s → [v, v, 0, 0]
+c620_quad_node:
+  ros__parameters:
+    can_interface: can2
+    active_wheels: [1, 2]
+    wheel_motor_ids: [1, 2, 0, 0]
+    gear_ratio: 19.0                 # 电机轴:麦轮；若实测偏慢可适当加大
+    control_hz: 500
+    can_tx_hz: 250
+    max_current_a: 5.0
+    max_vel_rad_s: 2.0
+    vel_friction_coulomb_a: 0.35      # 静摩擦补偿
+    vel_friction_a: 2.8               # 随转速增大的前馈（越大高速越有劲）
+    vel_friction_full_rpm: 55.0       # 参考转速，越小同样 rpm 电流越大
+    vel_friction_min_rpm: 3.0
+    startup_current_a: 1.2            # 仅起步瞬间
+    cmd_timeout_ms: 800
+    sync_wheels: true
+    sync_gain_a_per_rpm: 0.015
+    sync_corr_limit_a: 1.2
+    sync_vel_band_rpm: 12.0
+    stop_brake_a: 0.4
+    stop_brake_min_rpm: 40.0
+    rpm_ramp_rpm_s: 900.0             # 加速更快，指令变化跟得上
+    vel_deadband_rad_s: 0.01
+    vel_kp: 0.090
+    vel_ki: 0.020
+    wheel_sign: [1.0, -1.0, 1.0, 1.0]   # ID1/ID2 镜像：leg1=+1 leg2=-1 同向前进

@@ -1,0 +1,134 @@
+# 四足机械狗 — 电机 ID 与关节拓扑（整机）
+#
+# 图中标注（俯视）:
+#   内部 1~4 = 抬升关节（带麦轮那条连杆）
+#   外部 5~8 = 拉杆关节（趴下 / 站起）
+#
+# 腿号约定（俯视，头朝前）:
+#   leg1 左前 FL   leg2 右前 FR
+#   leg4 左后 RL   leg3 右后 RR
+
+robot: quadruped
+status: bringup
+version: 1
+
+# ── 关节 → 电机 ID ──────────────────────────────────────────
+legs:
+  leg1:
+    position: front_left
+    label: 左前
+    lift:    {motor_id: 1, type: RS03, role: lift,   side: inner}
+    crouch:  {motor_id: 5, type: RS03, role: crouch, side: outer}
+    wheel:   {motor_id: 1, type: M3508, esc: C620, role: mecanum}
+    bench_status: connected   # 当前只接了这一条腿
+
+  leg2:
+    position: front_right
+    label: 右前
+    lift:    {motor_id: 2, type: RS03, role: lift,   side: inner}
+    crouch:  {motor_id: 6, type: RS03, role: crouch, side: outer}
+    wheel:   {motor_id: 2, type: M3508, esc: C620, role: mecanum}
+    bench_status: id_set
+
+  leg3:
+    position: rear_right
+    label: 右后
+    lift:    {motor_id: 3, type: RS03, role: lift,   side: inner}
+    crouch:  {motor_id: 7, type: RS03, role: crouch, side: outer}
+    wheel:   {motor_id: 3, type: M3508, esc: C620, role: mecanum}
+    bench_status: id_set
+
+  leg4:
+    position: rear_left
+    label: 左后
+    lift:    {motor_id: 4, type: RS03, role: lift,   side: inner}
+    crouch:  {motor_id: 8, type: RS03, role: crouch, side: outer}
+    wheel:   {motor_id: 4, type: M3508, esc: C620, role: mecanum}
+    bench_status: id_set
+
+# ── ID 汇总（上位机已设好）──────────────────────────────────
+motor_id_map:
+  lift:   [1, 2, 3, 4]   # 内部，抬升
+  crouch: [5, 6, 7, 8]   # 外部，趴下/站起（拉杆）
+  wheel:  [1, 2, 3, 4]   # C620 上 M3508，与腿号一一对应
+
+# ── CAN 接线（三路 HUB）────────────────────────────────────
+can_plan:
+  lift:
+    interface: can0
+    motor_ids: [1, 2, 3, 4]
+    frame_type: extended
+    host_id: 0xFF
+  crouch:
+    interface: can1
+    motor_ids: [5, 6, 7, 8]
+    frame_type: extended
+    host_id: 0xFF
+  wheels:
+    interface: can2
+    motor_ids: [1, 2, 3, 4]
+    frame_type: standard
+    control_id: 0x200
+
+# ── ROS2 话题规划（协调层）──────────────────────────────────
+ros2:
+  # 现可用（leg1 台架）
+  leg1:
+    node: leg1_dual_node
+    params: config/leg1_dual_params.yaml
+    topics:
+      lift_command:   /leg1/lift/command
+      crouch_command: /leg1/crouch/command
+      lift_state:     /leg1/lift/state
+      crouch_state:   /leg1/crouch/state
+      goto_stand:     /leg1/goto/stand
+      goto_crouch:    /leg1/goto/crouch
+
+  wheel:
+    node: c620_ros2
+    topics:
+      velocity_command: /c620/velocity_command
+      state: /c620/state
+
+  # 后续四足协调节点（待开发）
+  quadruped_planned:
+    node: quad_coord_node
+    topics:
+      body_pose: /quad/body_pose          # 整体站/蹲/高度
+      leg_commands: /quad/legs/command    # 8 关节目标
+      wheel_velocities: /quad/wheels/cmd  # 4 轮速度
+      joint_states: /quad/joint_states
+
+# ── 协调控制分层 ─────────────────────────────────────────────
+architecture:
+  layers:
+    - name: coordinator
+      desc: 站起/趴下/步态，输出 8 关节角 + 4 轮速
+    - name: leg_driver
+      desc: legN_dual_ros2 或统一 quad_rs_ros2（8×RS03）
+    - name: wheel_driver
+      desc: c620_quad_ros2（4 轮一帧 0x200）
+    - name: can
+      desc: motor_cfg / c620_motor
+
+bringup_phases:
+  - phase: 1
+    name: leg1_bench
+    status: done
+    scope: "can0 抬升 + can1 拉杆 + can2 C620，quad_rs_ros2"
+  - phase: 2
+    name: quad_rs_probe
+    status: next
+    scope: "rs-probe-all: can0 探 1~4，can1 探 5~8"
+  - phase: 3
+    name: quad_rs_driver
+    status: in_progress
+    scope: "quad_rs_ros2 单节点控 8 关节，台架 active_legs=[1]"
+  - phase: 4
+    name: quad_c620
+    status: planned
+    scope: "单节点 4 轮速度 + 锁位"
+  - phase: 5
+    name: body_coordination
+    status: planned
+    scope: "协调站起/趴下，四腿同步"

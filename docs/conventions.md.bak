@@ -1,0 +1,64 @@
+# 命名与目录规范
+
+## 顶层目录
+
+| 目录 | 用途 |
+|------|------|
+| `config/` | 机器人与 ROS 参数（YAML） |
+| `docs/` | 文档与手册 PDF |
+| `scripts/` | 可执行脚本（按类别分子目录） |
+| `src/` | 源码（ROS2 包、实时环） |
+| `data/` | 标定数据、录包（预留） |
+| `log/` | colcon 编译日志（自动生成，勿提交） |
+| `logs/` | 性能测试日志（cyclictest 等） |
+
+## 命名规则
+
+### 配置文件 `config/`
+
+- 全小写 **snake_case**：`leg1_dual_params.yaml`
+- 按用途分子目录：
+  - `config/robot/` — 整机与关节描述
+  - `config/ros/` — ROS2 节点参数文件
+  - `config/bus/` — CAN 总线拓扑
+
+### 文档 `docs/`
+
+- Markdown：**snake_case**，如 `usb_can_hub.md`
+- 子目录：
+  - `bringup/` — 上电、脚本、联调流程
+  - `hardware/` — 电机/协议说明
+  - `manuals/` — 原厂 PDF
+  - `archive/` — 过时文档
+
+### 脚本 `scripts/`
+
+- 全小写 **kebab-case**：`hub-up.sh`、`goto-pose.sh`
+- 按设备/功能分子目录：`can/`、`robstride/`、`c620/`、`leg1/`、`system/`
+- 前缀含义：
+  - `run-*.sh` — 启动 ROS 节点或组合
+  - `probe` / `diagnose` — 只检测不运动
+  - `estop` / `emergency-stop` — 急停
+
+### ROS2 包 `src/robstride_ros_sample/`
+
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 可执行节点 | `{功能}_ros2` | `leg1_dual_ros2`, `c620_ros2` |
+| 源文件 | `{功能}_main.cpp` 或 `{设备}_main.cpp` | `leg1_dual_main.cpp` |
+| 库/驱动 | `{设备}_motor.cpp` | `c620_motor.cpp`, `motor_cfg.cpp` |
+| 头文件 | `include/motor_ros2/` | 与包名空间一致 |
+
+### ROS 话题
+
+- 按腿：`/leg{N}/lift/command`、`/leg{N}/crouch/command`
+- 整机（规划）：`/quad/...`
+- 麦轮：`/c620/...`（单轮台架）→ 后续 `/leg{N}/wheel/...`
+
+### 电机 ID
+
+- 灵足抬升（内）：`1`–`4` 对应 leg1–leg4
+- 灵足拉杆（外）：`5`–`8` 对应 leg1–leg4
+- C620 麦轮：`1`–`4` 与腿号一致
+
+详见 `config/robot/quadruped.yaml`。

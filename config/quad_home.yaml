@@ -1,0 +1,12 @@
+# 灵足关节零点标定 — 2026-09-16 重新上电后标定
+# 当前上电姿态为真实零点；command 发相对 home 的偏移 (rad)
+quad_rs_node:
+  ros__parameters:
+    home_leg1_lift: 5.888749
+    home_leg1_crouch: 2.389248
+    home_leg2_lift: -0.205559
+    home_leg2_crouch: 5.563534
+    home_leg3_lift: 4.783097
+    home_leg3_crouch: 2.177935
+    home_leg4_lift: 0.966054
+    home_leg4_crouch: 1.198458

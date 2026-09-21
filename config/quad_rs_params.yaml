@@ -1,0 +1,35 @@
+# quad_rs_ros2 — 台架 leg1
+quad_rs_node:
+  ros__parameters:
+    lift_can_interface: can0
+    crouch_can_interface: can1
+    active_legs: [1]
+    preset_mode: relative
+    command_relative: true
+    sync_motion: true
+    loop_ms: 5
+    motion_kp: 35.0
+    motion_kd: 2.5
+    max_vel_rad_s: 0.50
+    max_accel_rad_s2: 1.2
+    max_command_step_rad: 1.5
+    disable_on_exit: false
+
+    lift_preset_sign: [1.0, 1.0, -1.0, -1.0]
+    crouch_preset_sign: [1.0, 1.0, -1.0, -1.0]
+
+    leg1_lift_motor_id: 1
+    leg1_crouch_motor_id: 5
+    leg2_lift_motor_id: 2
+    leg2_crouch_motor_id: 6
+    leg3_lift_motor_id: 3
+    leg3_crouch_motor_id: 7
+    leg4_lift_motor_id: 4
+    leg4_crouch_motor_id: 8
+
+    pose_neutral_lift: [0.0, 0.0, 0.0, 0.0]
+    pose_neutral_crouch: [0.0, 0.0, 0.0, 0.0]
+    pose_stand_lift: [0.08, 0.08, 0.08, 0.08]
+    pose_stand_crouch: [0.20, 0.20, 0.20, 0.20]
+    pose_crouch_lift: [-0.08, -0.08, -0.08, -0.08]
+    pose_crouch_crouch: [0.33, 0.33, 0.33, 0.33]

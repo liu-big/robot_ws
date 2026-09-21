@@ -1,0 +1,23 @@
+# 第一条腿（左前 FL）
+# 抬升 can0 ID=1，拉杆 can1 ID=5，麦轮 can2 C620 ID=1
+
+leg: 1
+position: front_left
+status: bringup
+
+can:
+  lift:   {interface: can0, motor_id: 1}
+  crouch: {interface: can1, motor_id: 5}
+  wheel:  {interface: can2, motor_id: 1, esc: C620}
+
+ros2:
+  node: quad_rs_node
+  params: config/quad_rs_params.yaml
+  alt_node: leg1_dual_ros2
+  alt_params: config/leg1_dual_params.yaml
+
+scripts:
+  index: docs/scripts.md
+  start_all: scripts/run-quad-all.sh
+  goto_pose: scripts/quad-goto-pose.sh
+  estop: scripts/estop.sh

@@ -1,0 +1,19 @@
+# c620_ros2 — leg1 麦轮台架（can3 ID=1，leg2=ID2 见 quadruped.yaml）
+# 空载克服静摩擦约需 1A，低于此值转速爬升很慢
+c620_node:
+  ros__parameters:
+    can_interface: can3
+    motor_id: 1
+    hold_enable: true
+    can_iface_reset_enable: true
+
+    max_current_a: 3.0
+    max_vel_rad_s: 1.0
+
+    vel_friction_coulomb_a: 1.0
+    vel_friction_a: 0.3
+    vel_friction_full_rpm: 145.0
+    vel_friction_min_rpm: 1.0
+
+    hold_max_current_a: 1.2
+    hold_kp: 0.12

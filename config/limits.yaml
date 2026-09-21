@@ -1,0 +1,25 @@
+# 安全限幅 — 首次联调请设保守值
+
+global:
+  estop_enabled: true
+  watchdog_timeout_ms: 50
+  max_can_latency_us: 500
+
+joint_limits:
+  default:
+    pos_min: -3.14
+    pos_max: 3.14
+    vel_max: 10.0
+    torque_max: 5.0
+  bench_test:              # 台架首测 — 有负载时从更低开始
+    vel_max: 0.5           # rad/s，约 0.08 rps 出轴 (9:1)
+    torque_max: 2.0
+    rs03_ros_sample_vel: 0.3
+
+temperature:
+  warn_c: 60
+  shutdown_c: 80
+
+servo_rt:
+  max_cycle_overrun_us: 200    # 超过则计数告警
+  max_consecutive_overruns: 5  # 连续超限触发安全降扭

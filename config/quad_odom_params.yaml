@@ -1,0 +1,27 @@
+# quad_odom_ros2 — 麦轮里程计（轮速 FK + 积分）
+# FK 与 quad_teleop 的 mecanum_ik 互逆，参数需与 teleop/c620 一致
+quad_odom_node:
+  ros__parameters:
+    wheel_base_x: 0.30
+    wheel_base_y: 0.20
+    active_wheels: [1, 2]          # 与 c620_quad / teleop 一致
+    wheel_sign: [1.0, -1.0, 1.0, 1.0]
+
+    odom_frame_id: odom
+    base_frame_id: base_link
+    publish_tf: true
+
+    velocity_ema_alpha: 0.35       # 0=不平滑，1=只用当前帧
+    stale_timeout_ms: 500
+    min_dt_s: 0.001
+    max_dt_s: 0.25
+    open_loop_on_stale: false
+    publish_path: true
+    path_max_points: 2000
+    path_min_dist_m: 0.02
+    initial_x: 0.0
+    initial_y: 0.0
+    initial_yaw: 0.0
+
+    pose_covariance_diagonal: [0.02, 0.02, 1.0e6, 1.0e6, 1.0e6, 0.05]
+    twist_covariance_diagonal: [0.02, 0.02, 1.0e6, 1.0e6, 1.0e6, 0.03]

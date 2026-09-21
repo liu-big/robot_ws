@@ -1,0 +1,33 @@
+# 电机总表 — 四足整机
+# 详见 config/quadruped.yaml
+
+summary:
+  robstride_rs03: 8
+  dji_c620_m3508: 4
+
+robstride_lift:
+  bus: can0
+  host_id: 0xFF
+  motors:
+    - {id: 1, leg: leg1, role: lift, name: leg1_lift}
+    - {id: 2, leg: leg2, role: lift, name: leg2_lift}
+    - {id: 3, leg: leg3, role: lift, name: leg3_lift}
+    - {id: 4, leg: leg4, role: lift, name: leg4_lift}
+
+robstride_crouch:
+  bus: can1
+  host_id: 0xFF
+  motors:
+    - {id: 5, leg: leg1, role: crouch, name: leg1_crouch}
+    - {id: 6, leg: leg2, role: crouch, name: leg2_crouch}
+    - {id: 7, leg: leg3, role: crouch, name: leg3_crouch}
+    - {id: 8, leg: leg4, role: crouch, name: leg4_crouch}
+
+c620:
+  bus: can2
+  control_frame: 0x200
+  motors:
+    - {id: 1, leg: leg1, name: leg1_wheel, feedback: 0x201}
+    - {id: 2, leg: leg2, name: leg2_wheel, feedback: 0x202}
+    - {id: 3, leg: leg3, name: leg3_wheel, feedback: 0x203}
+    - {id: 4, leg: leg4, name: leg4_wheel, feedback: 0x204}
